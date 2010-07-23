@@ -218,6 +218,98 @@ module FireWatir
             
     end
     private :launch_browser
+
+    def create_profile(name)
+        raise "Won't create profile named default" if name == 'default'
+        return true if path_to_profile(name)
+        
+        start_process("-CreateProfile #{name}")
+        
+        true
+    end
+    private :create_profile
+
+    def delete_profile(name)
+        raise "Won't delete profile named default" if name == 'default'
+
+        profile = path_to_profile(name)
+        return true unless profile
+        
+        File.open(path_to_profiles_ini, 'r+') do |f|           
+            FileUtils.rm_rf profile
+            raise IOError, "Must close browser before deleting profile." if File.exist? profile
+            
+            ini_text = f.read
+            profile_array = profile_ini_reader(ini_text)
+            profile_array.reject!{|profile| profile['Name'] == name}
+            new_ini_text = profile_ini_writer(profile_array)
+                                
+            f.pos = 0            # back to start
+            f.print new_ini_text # write out modified text
+            f.truncate(f.pos)    # truncate to new length
+        end
+
+        true
+    end
+    private :delete_profile
+
+
+    def profile_ini_reader(ini_text)
+        ini_array = ini_text.split(/\[Profile.*\]/)
+        ini_array.shift # Get rid of the [General] entry
+        
+        ini_array.map do |profile|
+            hash = {}
+            
+            profile_array = profile.split(/\n/)
+            profile_array.reject!(&:blank?)
+            
+            profile_array.each do |entry|
+                key, value = entry.split('=')
+                hash[key] = value
+            end
+            hash
+        end
+    end
+   private :profile_ini_reader
+
+    def profile_ini_writer(ini_array)
+        
+        profile_string = "[General]\nStartWithLastProfile=1\n\n"
+        
+        ini_array.each_with_index do |hash, i|
+            entries = hash.to_a.map{|entry| entry.join('=')}.join("\n")
+            entries_string = "[Profile#{i}]\n#{entries}\n\n"
+            profile_string << entries_string
+        end
+        
+        profile_string
+    end
+    private :profile_ini_writer
+
+    def path_to_profile(name)
+        Dir.glob(path_to_profiles_folder+"/*.#{name}").first
+    end
+   private :path_to_profile
+
+    def path_to_profiles_ini
+        File.expand_path(path_to_profiles_folder+'/../profiles.ini')
+    end
+    private :path_to_profiles_ini
+
+    def path_to_profiles_folder
+        path = case current_os()
+        when :windows
+            File.expand_path('~\\Mozilla\\Firefox\\Profiles\\')
+        when :macosx
+            File.expand_path('~/Library/Application Support/Firefox/Profiles/')
+        when :linux
+            File.expand_path('~/.mozilla/firefox/')
+        end     
+        raise "unable to locate Firefox executable" if path.nil? || path.empty?
+        path
+    end
+    private :path_to_profiles_folder
     
     #
     # Description:
