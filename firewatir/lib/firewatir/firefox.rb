@@ -163,9 +163,6 @@ module FireWatir
       # Configure the browser
       set_defaults()
       
-      # Open a new window so that Firefox.start(url) functions correctly
-      open_window unless @options[:suppress_launch_process]
-      
       get_window_number()
       set_browser_document()
     end
