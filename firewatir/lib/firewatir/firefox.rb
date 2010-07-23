@@ -149,8 +149,9 @@ module FireWatir
       # error if running without jssh, we don't want to kill their current window (mac only)    
       # Connect to the JSSH interface to see if we have an existing instance
       connect() unless @jssh
-      
-      if current_os == :macosx && !%x{ps x | grep "firefox-bin" | grep -v jssh | grep -v grep}.empty?
+
+      # grep -v "\(firefox-bin\)" is used to ignore defunct processes that can happen occationally on mac
+      if current_os == :macosx && !%x{ps x | grep "firefox-bin" | grep -v "\(firefox-bin\)" | grep -v jssh | grep -v grep}.empty?
         raise "Firefox is running without -jssh" unless @jssh
       elsif not @options[:suppress_launch_process]
         # Launch a new browser if we have not been able to connect
@@ -163,6 +164,9 @@ module FireWatir
       # Configure the browser
       set_defaults()
       
+      # Open a new window so that Firefox.start(url) functions correctly
+      # open_window unless @options[:suppress_launch_process]
+
       get_window_number()
       set_browser_document()
     end
@@ -191,10 +195,9 @@ module FireWatir
     def launch_browser()
       
       # Determine which profile to use
-      if(@options[:profile])
+      if(@options[:profile])  
+        create_profile(@options[:profile])
         profile_opt = "-no-remote -P #{@options[:profile]}"
-        # TODO: we can create a profile using the following, but it does not have JSSH in. This could be globally installed.
-        #profile_opt = "-no-remote -CreateProfile #{@options[:profile]}"
       else
         profile_opt = "-no-remote"
       end
@@ -205,9 +208,15 @@ module FireWatir
         # port argument is supported
         start_process("-jssh -jssh-port #{@options[:port]} #{profile_opt}")
       else
+        
         # port argument is not supported - defaults to 9997
         start_process("-jssh #{profile_opt}")
       end
+      
+      # Wait until file exists for the given profile. JSSH needs this to establish a connection
+      # TODO This is just a file that firefox creates later in the startup process. Should really find
+      # the correct file(s  ) to wait for.
+      Watir::Waiter.wait_until {File.exist?(path_to_profile(@options[:profile])+'/cert8.db') } if @options[:profile]
       
       # Connect to the new browser
       # It may take a few seconds for the browser to permit connections
@@ -222,23 +231,26 @@ module FireWatir
     def create_profile(name)
         raise "Won't create profile named default" if name == 'default'
         return true if path_to_profile(name)
-        
-        start_process("-CreateProfile #{name}")
-        
+    
+        Process.fork do
+            exec("#{path_to_bin} -CreateProfile #{name}")
+        end
+        Process.wait
+        Watir::Waiter.wait_until { path_to_profile(name) && File.open(path_to_profiles_ini).read.grep(/^Name=#{name}$/).first}
+    
+        # Track if the profile was created by us
+        @profile_created = true
         true
     end
     private :create_profile
 
     def delete_profile(name)
         raise "Won't delete profile named default" if name == 'default'
-
-        profile = path_to_profile(name)
-        return true unless profile
+        return true unless path_to_profile(name)
         
-        File.open(path_to_profiles_ini, 'r+') do |f|           
-            FileUtils.rm_rf profile
-            raise IOError, "Must close browser before deleting profile." if File.exist? profile
-            
+        raise(IOError, "Must close browser before deleting profile.") unless FileUtils.rm_rf(path_to_profile(name))
+        
+        File.open(path_to_profiles_ini, 'r+') do |f|                 
             ini_text = f.read
             profile_array = profile_ini_reader(ini_text)
             profile_array.reject!{|profile| profile['Name'] == name}
@@ -290,7 +302,15 @@ module FireWatir
     def path_to_profile(name)
         Dir.glob(path_to_profiles_folder+"/*.#{name}").first
     end
-   private :path_to_profile
+    private :path_to_profile
+
+    # Returns the names of the profiles that currently exists on the system
+    # Does not include a random salt.
+    def self.list_profiles
+        Dir.glob(path_to_profiles_folder+"/*").map do |profile|
+           profile.gsub(/.*\/.*\./, '')
+        end
+    end
 
     def path_to_profiles_ini
         File.expand_path(path_to_profiles_folder+'/../profiles.ini')
@@ -331,7 +351,7 @@ module FireWatir
       # Tracking of child processes to ensure that we do not prematurely kill the application
       @@processes[@browser_pid] = 1
     end
-    private :start_process
+    #private :start_process
     
     # Creates a new instance of Firefox. Loads the URL and return the instance.
     # Input:
@@ -546,7 +566,6 @@ module FireWatir
     #   Closes the window.
     #
     def close
-      puts "closing"
       # Only attempt to close if we have a JSSH connection=
       if window_count <= 1
         close_window
@@ -558,6 +577,9 @@ module FireWatir
         window_number = find_window(:url, @window_url)
         close_window(window_number)
       end
+      
+      # Get rid of the profile if it was created by us
+      delete_profile(@options[:profile]) if @profile_created
     end
     
     #   Used for attaching pop up window to an existing Firefox window, either by url or title.
@@ -601,7 +623,6 @@ module FireWatir
     # Watir::Browser.attach() with no arguments passed the attach method will create a new window
     # this will only be called one time per instance we're only ever going to run in 1 window
     def open_window
-      
       if @opened_new_window
         return @opened_new_window
       end
@@ -630,7 +651,7 @@ module FireWatir
       @opened_new_window = window_number
       return window_number if window_number >= 0
     end
-    private :open_window
+    #private :open_window
     
     # return the window index for the browser window with the given title or url.
     #   how - :url or :title
