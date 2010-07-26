@@ -193,89 +193,102 @@ module FireWatir
     # Launches a new firefox browser process
     #
     def launch_browser()
-      
-      # Determine which profile to use
-      if(@options[:profile])  
-        create_profile(@options[:profile])
-        profile_opt = "-no-remote -P #{@options[:profile]}"
-      else
-        profile_opt = "-no-remote"
-      end
-      
-      
-      # TODO: remove this check once a multiple browsers XPI is available
-      if @options[:multiple_browser_xpi]
-        # port argument is supported
-        start_process("-jssh -jssh-port #{@options[:port]} #{profile_opt}")
-      else
-        
-        # port argument is not supported - defaults to 9997
-        start_process("-jssh #{profile_opt}")
-      end
-      
-      # Wait until file exists for the given profile. JSSH needs this to establish a connection
-      # TODO This is just a file that firefox creates later in the startup process. Should really find
-      # the correct file(s  ) to wait for.
-      Watir::Waiter.wait_until {File.exist?(path_to_profile(@options[:profile])+'/cert8.db') } if @options[:profile]
-      
-      # Connect to the new browser
-      # It may take a few seconds for the browser to permit connections
-      # so we wrap the call in a wait_until block to repeat until we timeout
-      Watir::Waiter.wait_until(@options[:new_browser_connection_timeout], @options[:new_browser_connection_rety_period]) do
-        connect()
-      end
-            
+
+        # Determine which profile to use
+        if(@options[:profile])  
+            create_profile(@options[:profile])
+            profile_opt = "-no-remote -P #{@options[:profile]}"
+        else
+            profile_opt = "-no-remote"
+        end
+
+
+        # TODO: remove this check once a multiple browsers XPI is available
+        if @options[:multiple_browser_xpi]
+            # port argument is supported
+            start_process("-jssh -jssh-port #{@options[:port]} #{profile_opt}")
+        else
+
+            # port argument is not supported - defaults to 9997
+            start_process("-jssh #{profile_opt}")
+        end
+
+        # Wait until file exists for the given profile. JSSH needs this to establish a connection
+        # TODO This is just a file that firefox creates later in the startup process. Should really find
+        # the correct file(s  ) to wait for.
+        Watir::Waiter.wait_until {File.exist?(path_to_profile(@options[:profile])+'/cert8.db') } if @options[:profile]
+
+        # Connect to the new browser
+        # It may take a few seconds for the browser to permit connections
+        # so we wrap the call in a wait_until block to repeat until we timeout
+        Watir::Waiter.wait_until(@options[:new_browser_connection_timeout], @options[:new_browser_connection_rety_period]) do
+            connect()
+        end
+
     end
     private :launch_browser
 
     def create_profile(name)
         raise "Won't create profile named default" if name == 'default'
         return true if path_to_profile(name)
-    
-        Process.fork do
-            exec("#{path_to_bin} -CreateProfile #{name}")
-        end
-        Process.wait
-        Watir::Waiter.wait_until { path_to_profile(name) && File.open(path_to_profiles_ini).read.grep(/^Name=#{name}$/).first}
-    
-        # Track if the profile was created by us
-        @profile_created = true
-        true
+
+        profile_manager(:add, name)
+
     end
-    private :create_profile
+#    private :create_profile
 
     def delete_profile(name)
         raise "Won't delete profile named default" if name == 'default'
         return true unless path_to_profile(name)
-        
-        raise(IOError, "Must close browser before deleting profile.") unless FileUtils.rm_rf(path_to_profile(name))
-        
+
+        profile_manager(:delete, name)
+
+    end
+#    private :delete_profile
+
+    def profile_manager(action, name)
+        raise "Invalid action" unless [:delete, :add].include? action
+
         File.open(path_to_profiles_ini, 'r+') do |f|                 
             ini_text = f.read
             profile_array = profile_ini_reader(ini_text)
-            profile_array.reject!{|profile| profile['Name'] == name}
+
+            if action == :delete
+                file_path = path_to_profile(name)
+                FileUtils.rm_rf(file_path)
+                raise(IOError, "Could not delete profile.") if path_to_profile(name)
+                
+                profile_array.reject!{|profile| profile['Name'] == name}
+            elsif action == :add
+                dir = FileUtils.mkdir(path_to_profiles_folder+"/#{name}").first
+                Watir::Waiter.wait_until{File.exist? dir}
+                FileUtils.touch(dir +'/prefs.js') # This file must exists for firefox to think there is a profile here
+                
+                profile_array << {'Name' => name, 'IsRelative' => '1', 'Path' => name }
+                @profile_created = true
+            end           
+
             new_ini_text = profile_ini_writer(profile_array)
-                                
+
             f.pos = 0            # back to start
             f.print new_ini_text # write out modified text
             f.truncate(f.pos)    # truncate to new length
         end
-
         true
     end
-    private :delete_profile
+#    private :profile_manager
 
 
     def profile_ini_reader(ini_text)
         ini_array = ini_text.split(/\[Profile.*\]/)
         ini_array.shift # Get rid of the [General] entry
-        
+
         ini_array.map do |profile|
             hash = {}
-            
+
             profile_array = profile.split(/\n/)
             profile_array.reject!(&:blank?)
-            
+
             profile_array.each do |entry|
                 key, value = entry.split('=')
                 hash[key] = value
@@ -283,39 +296,51 @@ module FireWatir
             hash
         end
     end
-   private :profile_ini_reader
+#    private :profile_ini_reader
 
     def profile_ini_writer(ini_array)
-        
+
         profile_string = "[General]\nStartWithLastProfile=1\n\n"
-        
+
         ini_array.each_with_index do |hash, i|
             entries = hash.to_a.map{|entry| entry.join('=')}.join("\n")
             entries_string = "[Profile#{i}]\n#{entries}\n\n"
             profile_string << entries_string
         end
-        
+
         profile_string
     end
-    private :profile_ini_writer
+#    private :profile_ini_writer
 
     def path_to_profile(name)
-        Dir.glob(path_to_profiles_folder+"/*.#{name}").first
+        Dir.glob(path_to_profiles_folder+"/*#{name}").first
     end
-    private :path_to_profile
+#    private :path_to_profile
 
     # Returns the names of the profiles that currently exists on the system
     # Does not include a random salt.
-    def self.list_profiles
-        Dir.glob(path_to_profiles_folder+"/*").map do |profile|
-           profile.gsub(/.*\/.*\./, '')
+    def list_profiles
+        profiles = Dir.glob(path_to_profiles_folder+"/*").map do |profile|
+            profile.gsub(/.*\/.*[\.|\/]/, '')
         end
+        
+        profiles.reject!{|s| s=="ini"} #The profiles.ini file is not a profile
+        profiles
     end
 
     def path_to_profiles_ini
-        File.expand_path(path_to_profiles_folder+'/../profiles.ini')
+        path = case current_os()
+        when :windows
+            File.expand_path('~\\Mozilla\\Firefox\\Profiles\\')
+        when :macosx
+            File.expand_path(path_to_profiles_folder+'/../profiles.ini')
+        when :linux
+            File.expand_path(path_to_profiles_folder+'/profiles.ini')
+        end     
+        raise "unable to locate profiles.ini" if path.nil? || path.empty?
+        path
     end
-    private :path_to_profiles_ini
+#    private :path_to_profiles_ini
 
     def path_to_profiles_folder
         path = case current_os()
@@ -326,11 +351,11 @@ module FireWatir
         when :linux
             File.expand_path('~/.mozilla/firefox/')
         end     
-        raise "unable to locate Firefox executable" if path.nil? || path.empty?
+        raise "unable to locate profiles folder" if path.nil? || path.empty?
         path
     end
-    private :path_to_profiles_folder
-    
+#    private :path_to_profiles_folder
+
     #
     # Description:
     # Launches the executable as a new process
@@ -339,129 +364,129 @@ module FireWatir
     # - options - additional options to pass to the command line
     #
     def start_process(options)
-      bin = path_to_bin()
+        bin = path_to_bin()
 
-      @browser_pid = Process.fork do
-        $stdout.reopen File.new('/dev/null', 'w')
-        $stderr.reopen File.new('/dev/null', 'w')
-        $stdin.reopen File.new('/dev/null', 'r')
-        exec("#{bin} #{options}")
-      end
-    
-      # Tracking of child processes to ensure that we do not prematurely kill the application
-      @@processes[@browser_pid] = 1
+        @browser_pid = Process.fork do
+            $stdout.reopen File.new('/dev/null', 'w')
+            $stderr.reopen File.new('/dev/null', 'w')
+            $stdin.reopen File.new('/dev/null', 'r')
+            exec("#{bin} #{options}")
+        end
+
+        # Tracking of child processes to ensure that we do not prematurely kill the application
+        @@processes[@browser_pid] = 1
     end
     #private :start_process
-    
+
     # Creates a new instance of Firefox. Loads the URL and return the instance.
     # Input:
     #   url - url of the page to be loaded.
     def self.start(url)
-      # Tracking of child processes to ensure that we do not prematurely kill the application
-      # TODO: Ensure that a new browser window is only created when required; the default window is not always used
-      ff = Firefox.new({}, @browser_pid, @jssh)
-      ff.goto(url)
-      return ff
+        # Tracking of child processes to ensure that we do not prematurely kill the application
+        # TODO: Ensure that a new browser window is only created when required; the default window is not always used
+        ff = Firefox.new({}, @browser_pid, @jssh)
+        ff.goto(url)
+        return ff
     end
-    
+
     # 
     # Description: 
     # Gets the window number opened. 
     # Currently, this returns the most recently opened window, which may or may
     # not be the current window.
     def get_window_number()
-      # now correctly handles instances where only browserless windows are open
-      # opens one we can use if count is 0
-      if window_count.zero?
-        open_window
-      end
-      @window_index = window_index
-      @window_index
+        # now correctly handles instances where only browserless windows are open
+        # opens one we can use if count is 0
+        if window_count.zero?
+            open_window
+        end
+        @window_index = window_index
+        @window_index
     end
     private :get_window_number
-    
+
     # Loads the given url in the browser. Waits for the page to get loaded.
     def goto(url)
-      get_window_number()
-      set_browser_document()
-      js_eval "#{browser_var}.loadURI(\"#{url}\")"
-      wait()
+        get_window_number()
+        set_browser_document()
+        js_eval "#{browser_var}.loadURI(\"#{url}\")"
+        wait()
     end
-    
+
     # Loads the previous page (if there is any) in the browser. Waits for the page to get loaded.
     def back()
-      js_eval "if(#{browser_var}.canGoBack) #{browser_var}.goBack()"
-      wait()
+        js_eval "if(#{browser_var}.canGoBack) #{browser_var}.goBack()"
+        wait()
     end
-    
+
     # Loads the next page (if there is any) in the browser. Waits for the page to get loaded.
     def forward()
-      js_eval "if(#{browser_var}.canGoForward) #{browser_var}.goForward()"
-      wait()
+        js_eval "if(#{browser_var}.canGoForward) #{browser_var}.goForward()"
+        wait()
     end
-    
+
     # Reloads the current page in the browser. Waits for the page to get loaded.
     def refresh()
-      js_eval "#{browser_var}.reload()"
-      wait()
+        js_eval "#{browser_var}.reload()"
+        wait()
     end
-    
+
     # Executes the given JavaScript string 
     def execute_script(source)
-      result = js_eval source.to_s
-      wait()
-      
-      result
+        result = js_eval source.to_s
+        wait()
+
+        result
     end
-        
+
     private
     # Called by commonwatir
     def set_defaults()
-      @error_checkers = []
+        @error_checkers = []
     end
-    
+
     #   Sets the document, window and browser variables to point to correct object in JSSh.
     def set_browser_document
-      # Add eventlistener for browser window so that we can reset the document back whenever there is redirect
-      # or browser loads on its own after some time. Useful when you are searching for flight results etc and
-      # page goes to search page after that it goes automatically to results page.
-      # Details : http://zenit.senecac.on.ca/wiki/index.php/Mozilla.dev.tech.xul#What_is_an_example_of_addProgressListener.3F
-      jssh_command = "var listObj = new Object();"; # create new object
-      jssh_command << "listObj.wpl = Components.interfaces.nsIWebProgressListener;"; # set the web progress listener.
-      jssh_command << "listObj.QueryInterface = function(aIID) {
-                                  if (aIID.equals(listObj.wpl) || 
-                                      aIID.equals(Components.interfaces.nsISupportsWeakReference) ||
-                                      aIID.equals(Components.interfaces.nsISupports)) 
-                                          return this;
-                                  throw Components.results.NS_NOINTERFACE;
-                              };" # set function to locate the object via QueryInterface
-      jssh_command << "listObj.onStateChange = function(aProgress, aRequest, aFlag, aStatus) { 
-                                                if (aFlag & listObj.wpl.STATE_STOP) { 
-                                                    if ( aFlag & listObj.wpl.STATE_IS_NETWORK ) {
-                                                       #{document_var} = #{browser_var}.contentDocument;
-                                                       #{body_var} = #{document_var}.body;
-                                                    } 
-                                                } 
-                                             };" # add function to be called when window state is change. When state is STATE_STOP & 
-      # STATE_IS_NETWORK then only everything is loaded. Now we can reset our variables.
-      js_eval jssh_command
-      
-      previous_caller = Kernel.caller
-      
-      # TODO: why do we get here with @window_index = -1?
-      puts previouse_caller if @window_index == -1
+        # Add eventlistener for browser window so that we can reset the document back whenever there is redirect
+        # or browser loads on its own after some time. Useful when you are searching for flight results etc and
+        # page goes to search page after that it goes automatically to results page.
+        # Details : http://zenit.senecac.on.ca/wiki/index.php/Mozilla.dev.tech.xul#What_is_an_example_of_addProgressListener.3F
+        jssh_command = "var listObj = new Object();"; # create new object
+        jssh_command << "listObj.wpl = Components.interfaces.nsIWebProgressListener;"; # set the web progress listener.
+        jssh_command << "listObj.QueryInterface = function(aIID) {
+        if (aIID.equals(listObj.wpl) || 
+            aIID.equals(Components.interfaces.nsISupportsWeakReference) ||
+            aIID.equals(Components.interfaces.nsISupports)) 
+            return this;
+            throw Components.results.NS_NOINTERFACE;
+            };" # set function to locate the object via QueryInterface
+            jssh_command << "listObj.onStateChange = function(aProgress, aRequest, aFlag, aStatus) { 
+            if (aFlag & listObj.wpl.STATE_STOP) { 
+                if ( aFlag & listObj.wpl.STATE_IS_NETWORK ) {
+                    #{document_var} = #{browser_var}.contentDocument;
+                    #{body_var} = #{document_var}.body;
+                } 
+            } 
+            };" # add function to be called when window state is change. When state is STATE_STOP & 
+            # STATE_IS_NETWORK then only everything is loaded. Now we can reset our variables.
+            js_eval jssh_command
 
-      jssh_command =  "var #{window_var} = getWindows()[#{@window_index}];"
-      jssh_command << "var #{browser_var} = #{window_var}.getBrowser();"
-      # Add listener create above to browser object
-      jssh_command << "#{browser_var}.addProgressListener( listObj,Components.interfaces.nsIWebProgress.NOTIFY_STATE_WINDOW );"
-      jssh_command << "var #{document_var} = #{browser_var}.contentDocument;"
-      jssh_command << "var #{body_var} = #{document_var}.body;"
-      js_eval jssh_command
-      
-      @window_title = js_eval "#{document_var}.title"
-      @window_url = js_eval "#{document_var}.URL"
-    end
+            previous_caller = Kernel.caller
+
+            # TODO: why do we get here with @window_index = -1?
+            puts previouse_caller if @window_index == -1
+
+            jssh_command =  "var #{window_var} = getWindows()[#{@window_index}];"
+            jssh_command << "var #{browser_var} = #{window_var}.getBrowser();"
+            # Add listener create above to browser object
+            jssh_command << "#{browser_var}.addProgressListener( listObj,Components.interfaces.nsIWebProgress.NOTIFY_STATE_WINDOW );"
+            jssh_command << "var #{document_var} = #{browser_var}.contentDocument;"
+            jssh_command << "var #{body_var} = #{document_var}.body;"
+            js_eval jssh_command
+
+            @window_title = js_eval "#{document_var}.title"
+            @window_url = js_eval "#{document_var}.URL"
+        end
     
     public
     # TODO: this area of code is unfinished. It appears to be used with fire_event() in elements.rb
