@@ -12,7 +12,7 @@ $LOAD_PATH.unshift File.join(File.dirname(__FILE__), 'lib')
 require 'firewatir/version'
 
 spec = Gem::Specification.new do |s|
-  s.name = 'firewatir'
+  s.name = 'makegood-firewatir'
   s.version = FireWatir::Firefox::VERSION
   s.summary = 'Automated testing tool for web applications using Firefox browser.'
   s.description = <<-EOF
@@ -24,6 +24,8 @@ spec = Gem::Specification.new do |s|
     FireWatir also checks results, such as whether expected text appears on the page, or whether a control is enabled.
     FireWatir is a Ruby library that works with Firefox on Windows. It also works on Linux, Mac but without support for
     JavaScript popups (currently support will be there shortly).
+    
+    This version supports multiple profiles at the same time (with the appropreate xpi)
   EOF
   s.author = 'Angrez Singh'
   s.homepage = 'http://wtr.rubyforge.org'
