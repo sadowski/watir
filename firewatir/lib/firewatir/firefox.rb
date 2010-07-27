@@ -196,7 +196,7 @@ module FireWatir
 
         # Determine which profile to use
         if(@options[:profile])  
-            create_profile(@options[:profile])
+            @profile_created = Profile.create(@options[:profile])
             profile_opt = "-no-remote -P #{@options[:profile]}"
         else
             profile_opt = "-no-remote"
@@ -204,7 +204,7 @@ module FireWatir
 
 
         # TODO: remove this check once a multiple browsers XPI is available
-        if @options[:multiple_browser_xpi]
+        if @options[:multiple_browser_xpi] || @options[:port]
             # port argument is supported
             start_process("-jssh -jssh-port #{@options[:port]} #{profile_opt}")
         else
@@ -216,7 +216,7 @@ module FireWatir
         # Wait until file exists for the given profile. JSSH needs this to establish a connection
         # TODO This is just a file that firefox creates later in the startup process. Should really find
         # the correct file(s  ) to wait for.
-        Watir::Waiter.wait_until {File.exist?(path_to_profile(@options[:profile])+'/cert8.db') } if @options[:profile]
+        Watir::Waiter.wait_until {File.exist?(Profile.path(@options[:profile])+'/cert8.db') } if @options[:profile]
 
         # Connect to the new browser
         # It may take a few seconds for the browser to permit connections
@@ -227,134 +227,6 @@ module FireWatir
 
     end
     private :launch_browser
-
-    def create_profile(name)
-        raise "Won't create profile named default" if name == 'default'
-        return true if path_to_profile(name)
-
-        profile_manager(:add, name)
-
-    end
-#    private :create_profile
-
-    def delete_profile(name)
-        raise "Won't delete profile named default" if name == 'default'
-        return true unless path_to_profile(name)
-
-        profile_manager(:delete, name)
-
-    end
-#    private :delete_profile
-
-    def profile_manager(action, name)
-        raise "Invalid action" unless [:delete, :add].include? action
-
-        File.open(path_to_profiles_ini, 'r+') do |f|                 
-            ini_text = f.read
-            profile_array = profile_ini_reader(ini_text)
-
-            if action == :delete
-                file_path = path_to_profile(name)
-                FileUtils.rm_rf(file_path)
-                raise(IOError, "Could not delete profile.") if path_to_profile(name)
-                
-                profile_array.reject!{|profile| profile['Name'] == name}
-            elsif action == :add
-                dir = FileUtils.mkdir(path_to_profiles_folder+"/#{name}").first
-                Watir::Waiter.wait_until{File.exist? dir}
-                FileUtils.touch(dir +'/prefs.js') # This file must exists for firefox to think there is a profile here
-                
-                profile_array << {'Name' => name, 'IsRelative' => '1', 'Path' => name }
-                @profile_created = true
-            end           
-
-            new_ini_text = profile_ini_writer(profile_array)
-
-            f.pos = 0            # back to start
-            f.print new_ini_text # write out modified text
-            f.truncate(f.pos)    # truncate to new length
-        end
-        true
-    end
-#    private :profile_manager
-
-
-    def profile_ini_reader(ini_text)
-        ini_array = ini_text.split(/\[Profile.*\]/)
-        ini_array.shift # Get rid of the [General] entry
-
-        ini_array.map do |profile|
-            hash = {}
-
-            profile_array = profile.split(/\n/)
-            profile_array.reject!(&:blank?)
-
-            profile_array.each do |entry|
-                key, value = entry.split('=')
-                hash[key] = value
-            end
-            hash
-        end
-    end
-#    private :profile_ini_reader
-
-    def profile_ini_writer(ini_array)
-
-        profile_string = "[General]\nStartWithLastProfile=1\n\n"
-
-        ini_array.each_with_index do |hash, i|
-            entries = hash.to_a.map{|entry| entry.join('=')}.join("\n")
-            entries_string = "[Profile#{i}]\n#{entries}\n\n"
-            profile_string << entries_string
-        end
-
-        profile_string
-    end
-#    private :profile_ini_writer
-
-    def path_to_profile(name)
-        Dir.glob(path_to_profiles_folder+"/*#{name}").first
-    end
-#    private :path_to_profile
-
-    # Returns the names of the profiles that currently exists on the system
-    # Does not include a random salt.
-    def list_profiles
-        profiles = Dir.glob(path_to_profiles_folder+"/*").map do |profile|
-            profile.gsub(/.*\/.*[\.|\/]/, '')
-        end
-        
-        profiles.reject!{|s| s=="ini"} #The profiles.ini file is not a profile
-        profiles
-    end
-
-    def path_to_profiles_ini
-        path = case current_os()
-        when :windows
-            File.expand_path('~\\Mozilla\\Firefox\\Profiles\\')
-        when :macosx
-            File.expand_path(path_to_profiles_folder+'/../profiles.ini')
-        when :linux
-            File.expand_path(path_to_profiles_folder+'/profiles.ini')
-        end     
-        raise "unable to locate profiles.ini" if path.nil? || path.empty?
-        path
-    end
-#    private :path_to_profiles_ini
-
-    def path_to_profiles_folder
-        path = case current_os()
-        when :windows
-            File.expand_path('~\\Mozilla\\Firefox\\Profiles\\')
-        when :macosx
-            File.expand_path('~/Library/Application Support/Firefox/Profiles/')
-        when :linux
-            File.expand_path('~/.mozilla/firefox/')
-        end     
-        raise "unable to locate profiles folder" if path.nil? || path.empty?
-        path
-    end
-#    private :path_to_profiles_folder
 
     #
     # Description:
@@ -604,7 +476,7 @@ module FireWatir
       end
       
       # Get rid of the profile if it was created by us
-      delete_profile(@options[:profile]) if @profile_created
+      Profile.delete(@options[:profile]) if @profile_created
     end
     
     #   Used for attaching pop up window to an existing Firefox window, either by url or title.

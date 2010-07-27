@@ -7,6 +7,7 @@ require 'firewatir/exceptions'
 require 'firewatir/container'
 require "firewatir/element"
 require "firewatir/document"
+require 'firewatir/profile'
 
 require 'firewatir/jssh_interface'
 
