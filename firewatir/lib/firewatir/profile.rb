@@ -1,5 +1,4 @@
 require 'fileutils'
-require 'commonwatir'
 
 module FireWatir
 
