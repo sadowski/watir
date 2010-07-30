@@ -36,34 +36,41 @@ module FireWatir
         def self.manager(action, name)
             raise "Invalid action" unless [:delete, :add].include? action
 
-            File.open(ini_path, 'r+') do |f|                 
-                ini_text = f.read
-                profile_array = ini_reader(ini_text)
+            File.open(ini_path, 'r+') do |f|
+                begin
+                    f.flock(File::LOCK_EX)
+                    ini_text = f.read
+                    profile_array = ini_reader(ini_text)
 
-                if action == :delete
-                    file_path = path(name)
-                    FileUtils.rm_rf(file_path)
-                    raise(IOError, "Could not delete profile.") if path(name)
+                    if action == :delete
+                        file_path = path(name)
+                        FileUtils.rm_rf(file_path)
+                        raise(IOError, "Could not delete profile.") if path(name)
 
-                    profile_array.reject!{|profile| profile['Name'] == name}
-                elsif action == :add
-                    dir = FileUtils.mkdir(folder_path+"/#{name}").first
-                    Watir::Waiter.wait_until{File.exist? dir}
-                    FileUtils.touch(dir +'/prefs.js') # This file must exists for firefox to think there is a profile here
+                        profile_array.reject!{|profile| profile['Name'] == name}
+                    elsif action == :add
+                        dir = FileUtils.mkdir(folder_path+"/#{name}").first
+                        Watir::Waiter.wait_until{File.exist? dir}
+                        FileUtils.touch(dir +'/prefs.js') # This file must exists for firefox to think there is a profile here
 
-                    profile_array << {'Name' => name, 'IsRelative' => '1', 'Path' => name }
-                    @profile_created = true
-                end           
+                        profile_array << {'Name' => name, 'IsRelative' => '1', 'Path' => name }
+                        @profile_created = true
+                    end
 
-                new_ini_text = ini_writer(profile_array)
+                    new_ini_text = ini_writer(profile_array)
 
-                f.pos = 0            # back to start
-                f.print new_ini_text # write out modified text
-                f.truncate(f.pos)    # truncate to new length
+                    f.pos = 0            # back to start
+                    f.print new_ini_text # write out modified text
+                    f.truncate(f.pos)    # truncate to new length
+                    
+                ensure
+                    # Must unlock the file
+                    f.flock(File::LOCK_UN)
+                end
             end
             true
         end
-        
+
         def self.path(name)
             Dir.glob(folder_path+"/*#{name}").first
         end
@@ -107,7 +114,7 @@ module FireWatir
                 File.expand_path(folder_path+'/../profiles.ini')
             when :linux
                 File.expand_path(folder_path+'/profiles.ini')
-            end     
+            end
             raise "unable to locate profiles.ini" if path.nil? || path.empty?
             path
         end
@@ -120,7 +127,7 @@ module FireWatir
                 File.expand_path('~/Library/Application Support/Firefox/Profiles/')
             when :linux
                 File.expand_path('~/.mozilla/firefox/')
-            end     
+            end
             raise "unable to locate profiles folder" if path.nil? || path.empty?
             path
         end
@@ -139,7 +146,7 @@ module FireWatir
                 :linux
             end
         end
-    
-    
+
+
     end
 end
