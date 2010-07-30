@@ -43,11 +43,21 @@ module FireWatir
                     profile_array = ini_reader(ini_text)
 
                     if action == :delete
-                        file_path = path(name)
-                        FileUtils.rm_rf(file_path)
-                        raise(IOError, "Could not delete profile.") if path(name)
-
-                        profile_array.reject!{|profile| profile['Name'] == name}
+                        retries = 3
+                        begin
+                            file_path = path(name)
+                            FileUtils.rm_rf(file_path)
+                            raise(IOError, "Could not delete profile.") if path(name)
+                            profile_array.reject!{|profile| profile['Name'] == name}
+                        rescue
+                            if retries > 0
+                                retries -= 1
+                                sleep 3
+                                retry
+                            else
+                                raise $!
+                            end
+                        end
                     elsif action == :add
                         dir = FileUtils.mkdir(folder_path+"/#{name}").first
                         Watir::Waiter.wait_until{File.exist? dir}
