@@ -150,8 +150,7 @@ module FireWatir
       # Connect to the JSSH interface to see if we have an existing instance
       connect() unless @jssh
 
-      # grep -v "\(firefox-bin\)" is used to ignore defunct processes that can happen occationally on mac
-      if current_os == :macosx && !%x{ps x | grep "firefox-bin" | grep -v "\(firefox-bin\)" | grep -v jssh | grep -v grep}.empty?
+      if current_os == :macosx && !%x{ps x | grep "firefox-bin" | grep -v jssh | grep -v grep}.empty?
         raise "Firefox is running without -jssh" unless @jssh
       elsif not @options[:suppress_launch_process]
         # Launch a new browser if we have not been able to connect
@@ -200,6 +199,12 @@ module FireWatir
             profile_opt = "-no-remote -P #{@options[:profile]}"
         else
             profile_opt = "-no-remote"
+        end
+        
+        # lets you set the display you want firefox on. Useful for Xvfb
+        # --display :99
+        if(@options[:display])
+           profile_opt += " --display #{@options[:display]}" 
         end
 
 
