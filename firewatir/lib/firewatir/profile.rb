@@ -62,8 +62,31 @@ module FireWatir
                         Watir::Waiter.wait_until{File.exist? dir}
                         FileUtils.touch(dir +'/prefs.js') # This file must exists for firefox to think there is a profile here
 
+                        File.open(dir + '/user.js', 'w') do |g| # add startup preferences for this user
+                            prefs = %q{
+                                user_pref("browser.download.manager.showWhenStarting", false);
+
+                                // user_pref("browser.download.dir", default_download_dir.gsub(/\//, '\\\\\\'));
+                                // user_pref("browser.helperApps.neverAsk.saveToDisk", "application/zip");
+                                // user_pref("browser.helperApps.neverAsk.saveToDisk","application/postscript");
+
+                                user_pref("app.update.enabled", false);
+                                user_pref("browser.search.update", false);
+                                user_pref("extensions.update.enabled", false);
+                                user_pref("browser.shell.checkDefaultBrowser", false);
+                                user_pref("browser.rights.3.shown", true);
+
+                                user_pref("browser.startup.page", 0);
+                                user_pref("browser.startup.homepage", 'about:blank');
+
+                                user_pref("browser.sessionstore.resume_from_crash", false);
+                                user_pref("browser.startup.homepage_override.mstone", 'ignore');
+                            }
+
+                            g.print prefs
+                        end
+
                         profile_array << {'Name' => name, 'IsRelative' => '1', 'Path' => name }
-                        @profile_created = true
                     end
 
                     new_ini_text = ini_writer(profile_array)
@@ -71,7 +94,7 @@ module FireWatir
                     f.pos = 0            # back to start
                     f.print new_ini_text # write out modified text
                     f.truncate(f.pos)    # truncate to new length
-                    
+
                 ensure
                     # Must unlock the file
                     f.flock(File::LOCK_UN)
