@@ -216,7 +216,7 @@ module FireWatir
         else
 
             # port argument is not supported - defaults to 9997
-            start_process("-jssh #{profile_opt}")
+            start_process("-jssh #{profile_opt} #{display_opt}")
         end
 
         # Wait until file exists for the given profile. JSSH needs this to establish a connection
