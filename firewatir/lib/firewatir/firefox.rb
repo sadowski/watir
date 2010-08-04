@@ -204,14 +204,15 @@ module FireWatir
         # lets you set the display you want firefox on. Useful for Xvfb
         # --display :99
         if(@options[:display])
-           profile_opt += " --display #{@options[:display]}" 
+            display_opt = "--display #{@options[:display]}" 
+        else
+            display_opt = ''
         end
-
-
+        
         # TODO: remove this check once a multiple browsers XPI is available
         if @options[:multiple_browser_xpi] || @options[:port]
             # port argument is supported
-            start_process("-jssh -jssh-port #{@options[:port]} #{profile_opt}")
+            start_process("-jssh -jssh-port #{@options[:port]} #{profile_opt} #{display_opt}")
         else
 
             # port argument is not supported - defaults to 9997
@@ -474,8 +475,10 @@ module FireWatir
         
         # Tracking of child processes to ensure that we do not prematurely kill the application
         @@processes[@browser_pid] -= 1
+        puts "(#{Thread.current['connector_port']}) Quitting: Browser pid = #{@@processes[@browser_pid]}"
         quit_application if @@processes[@browser_pid] == 0
       else
+        puts "(#{Thread.current['connector_port']}) Closing but not quitting."
         window_number = find_window(:url, @window_url)
         close_window(window_number)
       end
