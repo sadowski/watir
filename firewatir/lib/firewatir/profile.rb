@@ -6,15 +6,14 @@ module FireWatir
 
         def self.create(name=@name)
             raise "Won't create profile named default" if name == 'default'
-            return true if path(name)
+            return false if path(name)
 
             manager(:add, name)
-
         end
 
         def self.delete(name=@name)
             raise "Won't delete profile named default" if name == 'default'
-            return true unless path(name)
+            return false unless path(name)
 
             manager(:delete, name)
         end
