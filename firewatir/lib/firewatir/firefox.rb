@@ -221,7 +221,7 @@ module FireWatir
 
         # Wait until file exists for the given profile. JSSH needs this to establish a connection
         # TODO This is just a file that firefox creates later in the startup process. Should really find
-        # the correct file(s  ) to wait for.
+        # the correct file(s) to wait for.
         Watir::Waiter.wait_until {File.exist?(Profile.path(@options[:profile])+'/cert8.db') } if @options[:profile]
 
         # Connect to the new browser
@@ -446,13 +446,18 @@ module FireWatir
     # Quits the firefox application over JSSH
     #
     def quit_application
-      # Request that the browser exits
-      jssh_command = <<-EOC
-        var appStartup = Components.classes['@mozilla.org/toolkit/app-startup;1'].
-                            getService(Components.interfaces.nsIAppStartup);
-        appStartup.quit(Components.interfaces.nsIAppStartup.eAttemptQuit);
-      EOC
-      js_eval(jssh_command)
+        
+      # MacOSX will keep firefox open even if all the windows are closed.
+      # Other OSs will close firefox when the last window is closed.
+      # Ask firefox to close final process in macosx only.
+      if current_os == :macosx
+          jssh_command = <<-EOC
+          var appStartup = Components.classes['@mozilla.org/toolkit/app-startup;1'].
+                                getService(Components.interfaces.nsIAppStartup);
+                                appStartup.quit(Components.interfaces.nsIAppStartup.eAttemptQuit);
+          EOC
+          js_eval(jssh_command)
+      end
       
       # Close the JSSH connection
       @jssh.disconnect()
@@ -461,7 +466,7 @@ module FireWatir
       # Ensure that we do not leave zombie processes
       kill_process
     end
-    private :quit_application
+#    private :quit_application
     
     public
     #
@@ -469,20 +474,17 @@ module FireWatir
     #   Closes the window.
     #
     def close
-      # Only attempt to close if we have a JSSH connection=
+      # Only attempt to close if we have a JSSH connection
       if window_count <= 1
         close_window
         
         # Tracking of child processes to ensure that we do not prematurely kill the application
         @@processes[@browser_pid] -= 1
-        puts "(#{Thread.current['connector_port']}) Quitting: Browser pid = #{@@processes[@browser_pid]}"
         quit_application if @@processes[@browser_pid] == 0
       else
-        puts "(#{Thread.current['connector_port']}) Closing but not quitting."
         window_number = find_window(:url, @window_url)
         close_window(window_number)
       end
-      
       # Get rid of the profile if it was created by us
       Profile.delete(@options[:profile]) if @profile_created
     end
