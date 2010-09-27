@@ -148,13 +148,13 @@ module FireWatir
       # if its not open at all, regardless of the :suppress_launch_process option start it
       # error if running without jssh, we don't want to kill their current window (mac only)    
       # Connect to the JSSH interface to see if we have an existing instance
-      connect() unless @jssh
+      connect()# unless @jssh
 
       if current_os == :macosx && !%x{ps x | grep "firefox-bin" | grep -v jssh | grep -v grep}.empty?
         raise "Firefox is running without -jssh" unless @jssh
       elsif not @options[:suppress_launch_process]
         # Launch a new browser if we have not been able to connect
-        launch_browser() unless @jssh
+        launch_browser()# unless @jssh
       end
       
       # Have not been able to connect to the browser
@@ -352,7 +352,7 @@ module FireWatir
             previous_caller = Kernel.caller
 
             # TODO: why do we get here with @window_index = -1?
-            puts previouse_caller if @window_index == -1
+            puts previous_caller if @window_index == -1
 
             jssh_command =  "var #{window_var} = getWindows()[#{@window_index}];"
             jssh_command << "var #{browser_var} = #{window_var}.getBrowser();"
@@ -450,14 +450,14 @@ module FireWatir
       # MacOSX will keep firefox open even if all the windows are closed.
       # Other OSs will close firefox when the last window is closed.
       # Ask firefox to close final process in macosx only.
-      if current_os == :macosx
+#      if current_os == :macosx
           jssh_command = <<-EOC
           var appStartup = Components.classes['@mozilla.org/toolkit/app-startup;1'].
                                 getService(Components.interfaces.nsIAppStartup);
                                 appStartup.quit(Components.interfaces.nsIAppStartup.eAttemptQuit);
           EOC
           js_eval(jssh_command)
-      end
+#      end
       
       # Close the JSSH connection
       @jssh.disconnect()
@@ -487,6 +487,7 @@ module FireWatir
       end
       # Get rid of the profile if it was created by us
       Profile.delete(@options[:profile]) if @profile_created
+      true
     end
     
     #   Used for attaching pop up window to an existing Firefox window, either by url or title.
