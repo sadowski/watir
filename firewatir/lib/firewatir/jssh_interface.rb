@@ -124,7 +124,7 @@ class JSSHInterface
                 jssh_response += stream.recv(1024)
                 if jssh_response == JSSH_CLOSED
                     disconnect()
-                    raise(IOError, "The jssh connection has been closed by the remote host") #Should this raise? or just disconnect?
+                    # raise(IOError, "The jssh connection has been closed by the remote host") #Should this raise? or just disconnect?
                 end
             end
         end
