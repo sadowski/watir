@@ -450,14 +450,14 @@ module FireWatir
       # MacOSX will keep firefox open even if all the windows are closed.
       # Other OSs will close firefox when the last window is closed.
       # Ask firefox to close final process in macosx only.
-#      if current_os == :macosx
+      if current_os == :macosx
           jssh_command = <<-EOC
           var appStartup = Components.classes['@mozilla.org/toolkit/app-startup;1'].
                                 getService(Components.interfaces.nsIAppStartup);
                                 appStartup.quit(Components.interfaces.nsIAppStartup.eAttemptQuit);
           EOC
           js_eval(jssh_command)
-#      end
+      end
       
       # Close the JSSH connection
       @jssh.disconnect()
